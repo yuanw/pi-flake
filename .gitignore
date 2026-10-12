@@ -1,0 +1,4 @@
+.nixfmt-bin
+result
+result-*
+.direnv/

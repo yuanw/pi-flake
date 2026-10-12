@@ -13,11 +13,11 @@
     let
       inherit (nixpkgs) lib;
 
+      # x86_64-darwin is out of support in the nixpkgs this flake tracks.
       systems = [
+        "aarch64-darwin"
         "x86_64-linux"
         "aarch64-linux"
-        "x86_64-darwin"
-        "aarch64-darwin"
       ];
 
       eachSystem = f: lib.genAttrs systems (system: f system nixpkgs.legacyPackages.${system});
@@ -26,6 +26,11 @@
       piLib = import ./lib {
         inherit lib;
         flakePrompt = inputs.flake-prompt.lib;
+      };
+
+      homeManagerTemplate = {
+        path = ./templates/home-manager;
+        description = "Home Manager configuration with flake-prompt skills and MCP servers";
       };
 
       modules = import ./modules {
@@ -114,9 +119,9 @@
         }
       );
 
-      templates.home-manager = {
-        path = ./templates/home-manager;
-        description = "Home Manager configuration with flake-prompt skills and MCP servers";
+      templates = {
+        default = homeManagerTemplate;
+        home-manager = homeManagerTemplate;
       };
 
       formatter = eachSystem (system: pkgs: pkgs.nixfmt-rfc-style);
