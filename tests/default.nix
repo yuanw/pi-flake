@@ -99,6 +99,12 @@ let
     package = extensionPackage;
   };
 
+  # A source path, not a derivation: the same normalisation must apply.
+  pathPackage = piLib.toPiPackage {
+    inherit pkgs;
+    package = ./fixture.ts;
+  };
+
   extensionCfg = evalPi [
     {
       programs.pi = {
@@ -107,6 +113,10 @@ let
           enable = true;
           package = extensionPackage;
           runtimePackages = [ pkgs.jq ];
+        };
+        extensions.source = {
+          enable = true;
+          package = ./fixture.ts;
         };
         providers.ollama = {
           baseUrl = "http://localhost:11434/v1";
@@ -191,9 +201,11 @@ in
   # An extension registry that only declares a name and a package.
   extensions = pkgs.runCommand "test-extensions" { nativeBuildInputs = [ pkgs.jq ]; } ''
     settings=${extensionCfg.generatedSettingsFile}
-    jq -e '.packages == ["${demoPackage}"]' $settings
+    jq -e '.packages == [ "${demoPackage}", "${pathPackage}" ]' $settings
     jq -e '.pi.extensions == ["./extensions"] and (.keywords | index("pi-package"))' ${demoPackage}/package.json
     test -f ${demoPackage}/extensions/demo-extension.ts
+    jq -e '.packages | index("${pathPackage}") != null' $settings
+    test -f ${pathPackage}/extensions/fixture.ts
 
     jq -e '.providers.ollama.baseUrl == "http://localhost:11434/v1"' ${extensionCfg.generatedModelsFile}
     jq -e '.providers.ollama | has("enable") and has("package") | not' ${extensionCfg.generatedModelsFile}

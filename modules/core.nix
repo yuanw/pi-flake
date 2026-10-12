@@ -278,11 +278,17 @@ in
               description = "Package name override; defaults to the option name.";
             };
             package = lib.mkOption {
-              type = lib.types.nullOr lib.types.package;
+              type = lib.types.nullOr (
+                lib.types.oneOf [
+                  lib.types.package
+                  lib.types.path
+                ]
+              );
               default = null;
               description = ''
-                Pi package, extension directory, or single `.ts`/`.js` file.
-                Anything that is not already a Pi package is packaged as one.
+                Pi package, extension directory, or single `.ts`/`.js` file —
+                a derivation or a source path. Anything that is not already a
+                Pi package is packaged as one.
               '';
             };
             runtimePackages = lib.mkOption {
