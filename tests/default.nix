@@ -99,10 +99,16 @@ let
     package = extensionPackage;
   };
 
-  # A source path, not a derivation: the same normalisation must apply.
+  # Source paths, not just derivations: single file and bare directory trees
+  # both have to come out as Pi packages.
   pathPackage = piLib.toPiPackage {
     inherit pkgs;
     package = ./fixture.ts;
+  };
+
+  dirPackage = piLib.toPiPackage {
+    inherit pkgs;
+    package = ./ext-src;
   };
 
   extensionCfg = evalPi [
@@ -117,6 +123,10 @@ let
         extensions.source = {
           enable = true;
           package = ./fixture.ts;
+        };
+        extensions.sourceDir = {
+          enable = true;
+          package = ./ext-src;
         };
         providers.ollama = {
           baseUrl = "http://localhost:11434/v1";
@@ -201,11 +211,13 @@ in
   # An extension registry that only declares a name and a package.
   extensions = pkgs.runCommand "test-extensions" { nativeBuildInputs = [ pkgs.jq ]; } ''
     settings=${extensionCfg.generatedSettingsFile}
-    jq -e '.packages == [ "${demoPackage}", "${pathPackage}" ]' $settings
+    jq -e '.packages == [ "${demoPackage}", "${pathPackage}", "${dirPackage}" ]' $settings
     jq -e '.pi.extensions == ["./extensions"] and (.keywords | index("pi-package"))' ${demoPackage}/package.json
     test -f ${demoPackage}/extensions/demo-extension.ts
     jq -e '.packages | index("${pathPackage}") != null' $settings
     test -f ${pathPackage}/extensions/fixture.ts
+    test -f ${dirPackage}/extensions/tool.ts
+    jq -e '.pi.extensions == ["./extensions"]' ${dirPackage}/package.json
 
     jq -e '.providers.ollama.baseUrl == "http://localhost:11434/v1"' ${extensionCfg.generatedModelsFile}
     jq -e '.providers.ollama | has("enable") and has("package") | not' ${extensionCfg.generatedModelsFile}

@@ -72,7 +72,7 @@ else
   # Source tree of extension files, no manifest, no layout.
   mk {
     pname = name';
-    inherit version';
+    version = version';
     src = pkgs.runCommand "pi-src-${name'}" { } ''
       mkdir -p "$out"
       cp -a ${pkg}/. "$out/"
