@@ -120,6 +120,16 @@ let
     package = singleFilePackageInput;
   };
 
+  # Marked as a Pi package, so it must be listed as-is: wrapping it would copy
+  # node_modules and overwrite a working manifest.
+  markedPackage = pkgs.runCommand "marked-pi-package-1.0.0" {
+    passthru.isPiPackage = true;
+  } ''
+    mkdir -p "$out"
+    printf %s '{"name":"marked","pi":{"extensions":["./index.js"]}}' >$out/package.json
+    touch $out/index.js
+  '';
+
   extensionCfg = evalPi [
     {
       programs.pi = {
@@ -140,6 +150,10 @@ let
         extensions.singleFile = {
           enable = true;
           package = singleFilePackageInput;
+        };
+        extensions.marked = {
+          enable = true;
+          package = markedPackage;
         };
         providers.ollama = {
           baseUrl = "http://localhost:11434/v1";
@@ -224,10 +238,10 @@ in
   # An extension registry that only declares a name and a package.
   extensions = pkgs.runCommand "test-extensions" { nativeBuildInputs = [ pkgs.jq ]; } ''
     settings=${extensionCfg.generatedSettingsFile}
-    for p in ${demoPackage} ${pathPackage} ${dirPackage} ${singleFilePackage}; do
+    for p in ${demoPackage} ${pathPackage} ${dirPackage} ${singleFilePackage} ${markedPackage}; do
       jq -e --arg p "$p" '.packages | index($p) != null' $settings
     done
-    jq -e '.packages | length == 4' $settings
+    jq -e '.packages | length == 5' $settings
     jq -e '.pi.extensions == ["./extensions"]' ${singleFilePackage}/package.json
     find ${singleFilePackage}/extensions -name '*.ts' | grep -q .
     jq -e '.pi.extensions == ["./extensions"] and (.keywords | index("pi-package"))' ${demoPackage}/package.json

@@ -88,8 +88,9 @@ pkgs.runCommand "pi-extension-${pname}-${version}"
         ''
     }
 
+    # The package's own manifest wins: its `pi.extensions` points at real files.
     if [ -f "$out/package.json" ]; then
-      jq -s '.[0] * .[1]' "$out/package.json" ${manifestFile} > merged.json
+      jq -s '.[1] * .[0]' "$out/package.json" ${manifestFile} > merged.json
       mv merged.json "$out/package.json"
     else
       cp ${manifestFile} "$out/package.json"

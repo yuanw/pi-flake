@@ -60,8 +60,11 @@ let
     else
       "0.1.0";
 
-  # False for an unrealised derivation, which is the case we are trying to fix.
-  isPiPackage = lib.isDerivation pkg && builtins.pathExists "${toString pkg}/package.json";
+  # Nothing may touch the filesystem here: peeking inside a derivation's output
+  # forces it to be realised during evaluation, so the result would depend on
+  # what happens to be in the store. The answer is declared, not detected —
+  # pi-flake's own wrappers set `isPiPackage`, and hosts mark real Pi packages.
+  isPiPackage = lib.isDerivation pkg && (pkg.isPiPackage or pkg.passthru.isPiPackage or false);
 in
 if isPiPackage then
   pkg
