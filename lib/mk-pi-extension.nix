@@ -9,6 +9,7 @@
   entrypoint ? null,
   content ? null,
   runtimePackages ? [ ],
+  fileName ? null,
   piManifest ? { },
   meta ? { },
 }:
@@ -37,8 +38,17 @@ let
 
   isDirectory = src != null;
   file = if content != null then pkgs.writeText "${pname}-index.ts" content else source;
-  # Store paths carry a hash prefix; the extension keeps its source name.
-  fileName = if lib.isDerivation file then file.name else baseNameOf (toString file);
+
+  # What the extension ends up called under extensions/. Store paths carry a
+  # hash prefix and derivations often carry a version in their name, so callers
+  # can pass `fileName` explicitly.
+  extensionFileName =
+    if fileName != null then
+      fileName
+    else if lib.isDerivation file then
+      file.name
+    else
+      baseNameOf (toString file);
 in
 pkgs.runCommand "pi-extension-${pname}-${version}"
   {
@@ -57,18 +67,24 @@ pkgs.runCommand "pi-extension-${pname}-${version}"
     ${
       if isDirectory then
         ''
-          cp -a ${source}/. "$out/"
-          chmod -R u+w "$out"
-          # Source trees that keep their .ts files at the root need them under
-          # extensions/ for Pi's conventional discovery.
-          if [ -z "$(find "$out/extensions" -type f 2>/dev/null)" ]; then
-            find "$out" -maxdepth 1 -type f \( -name '*.ts' -o -name '*.js' -o -name '*.mjs' \) \
-              -exec mv -t "$out/extensions" {} +
+          # A derivation output can be one file even when its store path looks
+          # like a directory, so let the filesystem decide.
+          if [ -f ${source} ]; then
+            cp ${source} "$out/extensions/${extensionFileName}"
+          else
+            cp -a ${source}/. "$out/"
+            chmod -R u+w "$out"
+            # Trees that keep their .ts files at the root need them under
+            # extensions/ for Pi's conventional discovery.
+            if [ -z "$(find "$out/extensions" -type f 2>/dev/null)" ]; then
+              find "$out" -maxdepth 1 -type f \( -name '*.ts' -o -name '*.js' -o -name '*.mjs' \) \
+                -exec mv -t "$out/extensions" {} +
+            fi
           fi
         ''
       else
         ''
-          cp ${file} "$out/extensions/${fileName}"
+          cp ${file} "$out/extensions/${extensionFileName}"
         ''
     }
 

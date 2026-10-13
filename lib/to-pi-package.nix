@@ -8,10 +8,6 @@
   manifest has to be wrapped. This replaces the per-host glue that otherwise
   accumulates around a Pi module.
 */
-let
-  mkPiExtension = import ./mk-pi-extension.nix { inherit lib; };
-  anySuffix = suffixes: str: lib.any (suffix: lib.hasSuffix suffix str) suffixes;
-in
 {
   pkgs,
   name ? null,
@@ -19,62 +15,63 @@ in
   package,
 }:
 let
+  mkPiExtension = import ./mk-pi-extension.nix { inherit lib; };
+
   pkg =
     if lib.isDerivation package || builtins.isPath package then
       package
     else
       throw "toPiPackage: expected a derivation or path, got ${toString (lib.typeOf package)}";
 
-  isDerivation = lib.isDerivation pkg;
-  pathString = toString pkg;
+  cleanName = lib.getName pkg;
 
-  # For a derivation `<hash>-foo.ts` both pname and name carry `.ts`, so the
-  # package name is derived from whatever arrives.
   name' =
     if name != null then
       name
-    else if isDerivation then
-      pkg.pname or pkg.name or "extension"
+    else if lib.isDerivation pkg then
+      cleanName
     else
-      baseNameOf pathString;
+      baseNameOf (toString pkg);
+
+  # Names are the weak point of this whole job. A source file ends in `.ts`; a
+  # derivation that installs one file usually carries `.ts-<version>` in its
+  # name. Both need stripping for the package name and keeping for the file.
+  extSuffix =
+    lib.findFirst
+      (suffix: lib.hasSuffix suffix name')
+      null
+      [
+        ".ts"
+        ".js"
+        ".mjs"
+        ".cjs"
+      ];
+
+  fileName = if extSuffix != null then name' else null;
+
+  pname =
+    if extSuffix != null then lib.removeSuffix extSuffix name' else name';
 
   version' =
     if version != null then
       version
-    else if isDerivation then
+    else if lib.isDerivation pkg then
       pkg.version or "0.1.0"
     else
       "0.1.0";
 
-  # Checked on the path string before touching the filesystem: a `.ts` store
-  # path is a single file even when it has not been realised yet.
-  isFile = anySuffix [
-    ".ts"
-    ".js"
-    ".mjs"
-    ".cjs"
-  ] pathString;
-
-  hasManifest = !isFile && builtins.pathExists "${pathString}/package.json";
-  hasLayout = !isFile && builtins.pathExists "${pathString}/extensions";
-
-  mk = args: mkPiExtension ({ inherit pkgs; } // args);
+  # False for an unrealised derivation, which is the case we are trying to fix.
+  isPiPackage = lib.isDerivation pkg && builtins.pathExists "${toString pkg}/package.json";
 in
-if isFile then
-  mk {
-    pname = lib.removeSuffix ".js" (lib.removeSuffix ".ts" name');
-    version = version';
-    entrypoint = pkg;
-  }
-else if hasManifest || hasLayout then
+if isPiPackage then
   pkg
 else
-  # Source tree of extension files, no manifest, no layout.
-  mk {
-    pname = name';
+  # Directories, single files and bare source trees all copy through the same
+  # builder; whether `src` lands as one file or a tree is decided in the shell,
+  # because a store path cannot tell you which it is.
+  mkPiExtension {
+    inherit pkgs fileName;
+    inherit pname;
     version = version';
-    src = pkgs.runCommand "pi-src-${name'}" { } ''
-      mkdir -p "$out"
-      cp -a ${pkg}/. "$out/"
-    '';
+    src = pkg;
   }

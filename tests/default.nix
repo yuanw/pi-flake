@@ -94,6 +94,9 @@ let
   '';
 
   # What core wraps for programs.pi.extensions.demo.package.
+  singleFilePackageInput = pkgs.runCommand "pi-slow-mode.ts-0-unstable-2026-09-22" { }
+    ''cp ${./fixture.ts} $out'';
+
   demoPackage = piLib.toPiPackage {
     inherit pkgs;
     package = extensionPackage;
@@ -109,6 +112,12 @@ let
   dirPackage = piLib.toPiPackage {
     inherit pkgs;
     package = ./ext-src;
+  };
+
+  # The same derivation, normalised: what `packages` has to list.
+  singleFilePackage = piLib.toPiPackage {
+    inherit pkgs;
+    package = singleFilePackageInput;
   };
 
   extensionCfg = evalPi [
@@ -127,6 +136,10 @@ let
         extensions.sourceDir = {
           enable = true;
           package = ./ext-src;
+        };
+        extensions.singleFile = {
+          enable = true;
+          package = singleFilePackageInput;
         };
         providers.ollama = {
           baseUrl = "http://localhost:11434/v1";
@@ -211,7 +224,12 @@ in
   # An extension registry that only declares a name and a package.
   extensions = pkgs.runCommand "test-extensions" { nativeBuildInputs = [ pkgs.jq ]; } ''
     settings=${extensionCfg.generatedSettingsFile}
-    jq -e '.packages == [ "${demoPackage}", "${pathPackage}", "${dirPackage}" ]' $settings
+    for p in ${demoPackage} ${pathPackage} ${dirPackage} ${singleFilePackage}; do
+      jq -e --arg p "$p" '.packages | index($p) != null' $settings
+    done
+    jq -e '.packages | length == 4' $settings
+    jq -e '.pi.extensions == ["./extensions"]' ${singleFilePackage}/package.json
+    find ${singleFilePackage}/extensions -name '*.ts' | grep -q .
     jq -e '.pi.extensions == ["./extensions"] and (.keywords | index("pi-package"))' ${demoPackage}/package.json
     test -f ${demoPackage}/extensions/demo-extension.ts
     jq -e '.packages | index("${pathPackage}") != null' $settings
