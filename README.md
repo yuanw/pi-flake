@@ -91,13 +91,30 @@ somewhere else.
 
 | What you pass | What Pi gets |
 |---|---|
-| a Pi package (dir with `package.json`) | loaded as-is |
+| a derivation marked `isPiPackage = true` | loaded as-is |
 | a directory of `.ts`/`.js` sources | wrapped with a manifest and `pi.extensions = ["./extensions"]` |
 | a single `.ts` file, source path or derivation | wrapped as a one-entry package |
 
 Packing matters because Pi only runs peer-dependency mapping for things that
 look like packages — a bare store path to a `.ts` file loads but cannot resolve
 `@mariozechner/*` imports.
+
+Everything except a marked package is *copied*, so a package with a big
+`node_modules` costs a second store path. Pi packages you own should say so, and
+the marker must be set in the derivation's source or with `extendDerivation`,
+both of which rebuild nothing:
+
+```nix
+# packages/my-extensions/pi-cursor-agent.nix
+buildNpmPackage { ... passthru.isPiPackage = true; }
+
+# or, annotating someone else's package
+lib.extendDerivation true { isPiPackage = true; } drv
+```
+
+Wrapping is never decided by reading inside a derivation: `package.json` is
+checked by the builder, not by the evaluator, so the result cannot depend on
+what happens to be in the store.
 
 `runtimePackages` puts a CLI on `PATH` for the whole session (and is picked up
 from `passthru.runtimePackages`, so a well-built package ships its own
