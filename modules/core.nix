@@ -242,11 +242,12 @@ in
       default = false;
       example = lib.literalExpression "true";
       description = ''
-        Also symlink the generated mcp.json to `~/.cursor/mcp.json` on launch,
-        so Cursor's agent serves the same MCP servers. That copy leaves out
-        `exposure`, `toolExposure`, `description` and `type` (a type value Cursor
-        does not know makes it discard the whole file) and any server with
-        `enabled = false`.
+        Also symlink the generated mcp.json to `~/.cursor/mcp.json` (on
+        home-manager activation and again when `pi` launches), so Cursor's
+        agent serves the same MCP servers without needing a `pi` run after
+        every rebuild. That copy leaves out `exposure`, `toolExposure`,
+        `description` and `type` (a type value Cursor does not know makes it
+        discard the whole file) and any server with `enabled = false`.
       '';
     };
 
@@ -480,5 +481,19 @@ in
         }
       ];
     };
+
+    # Keep mcp.json current on `home-manager switch` / darwin-rebuild. The `pi`
+    # wrapper still re-links on launch (backup of a hand-written file, PATH
+    # refreshes), but Cursor Agent does not run that wrapper, so without these
+    # home.file entries a rebuild left ~/.cursor/mcp.json pointing at stale
+    # store paths until someone launched `pi`.
+    home.file = lib.mkMerge [
+      (lib.optionalAttrs (generatedMcpFile != null) {
+        ".pi/agent/mcp.json".source = generatedMcpFile;
+      })
+      (lib.optionalAttrs (generatedCursorMcpFile != null) {
+        ".cursor/mcp.json".source = generatedCursorMcpFile;
+      })
+    ];
   };
 }
