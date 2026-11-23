@@ -122,13 +122,16 @@ let
 
   # Marked as a Pi package, so it must be listed as-is: wrapping it would copy
   # node_modules and overwrite a working manifest.
-  markedPackage = pkgs.runCommand "marked-pi-package-1.0.0" {
-    passthru.isPiPackage = true;
-  } ''
-    mkdir -p "$out"
-    printf %s '{"name":"marked","pi":{"extensions":["./index.js"]}}' >$out/package.json
-    touch $out/index.js
-  '';
+  markedPackage =
+    pkgs.runCommand "marked-pi-package-1.0.0"
+      {
+        passthru.isPiPackage = true;
+      }
+      ''
+        mkdir -p "$out"
+        printf %s '{"name":"marked","pi":{"extensions":["./index.js"]}}' >$out/package.json
+        touch $out/index.js
+      '';
 
   extensionCfg = evalPi [
     {
@@ -218,6 +221,68 @@ in
     jq -e '.mcpServers.filesystem.command | test("/bin/pi-mcp-filesystem$")' $mcp
     touch $out
   '';
+
+  # Cursor gets the same servers in ~/.cursor/mcp.json, minus what only Pi
+  # understands, and a hand-written file there survives as .before-pi-flake.
+  cursor =
+    let
+      cfg = evalPi [
+        {
+          programs.pi = {
+            enable = true;
+            package = pkgs.writeShellScriptBin "pi" "exit 0";
+            linkCursorMcp = true;
+            mcpServers = {
+              amap = {
+                command = "echo";
+                env.AMAP_KEY = "$AMAP_KEY";
+                env.MIXED = "token: \${BRACED}, price $5";
+              };
+              docs = {
+                url = "https://example.com/mcp";
+                type = "http";
+                headers.Authorization = "Bearer $DOCS_TOKEN";
+                exposure = "deferred";
+                toolExposure.search_code = "direct";
+                description = "Docs.";
+              };
+              off = {
+                command = "echo";
+                enabled = false;
+              };
+            };
+          };
+        }
+      ];
+    in
+    pkgs.runCommand "test-cursor" { nativeBuildInputs = [ pkgs.jq ]; } ''
+      cursor=${cfg.generatedCursorMcpFile}
+      jq -e '.mcpServers | has("off") | not' $cursor
+      jq -e '.mcpServers.amap.env.AMAP_KEY == "''${env:AMAP_KEY}"' $cursor
+      jq -e '.mcpServers.amap.env.MIXED == "token: ''${env:BRACED}, price $5"' $cursor
+      jq -e '.mcpServers.docs.url == "https://example.com/mcp"' $cursor
+      jq -e '.mcpServers.docs.headers.Authorization == "Bearer ''${env:DOCS_TOKEN}"' $cursor
+      jq -e '.mcpServers.docs | has("type") or has("exposure") or has("toolExposure") or has("description") | not' $cursor
+      # Pi's own file is untouched by the Cursor form.
+      pi=${cfg.generatedMcpFile}
+      jq -e '.mcpServers.off == { "enabled": false }' $pi
+      jq -e '.mcpServers.amap.env.AMAP_KEY == "$AMAP_KEY"' $pi
+      jq -e '.mcpServers.amap.env.MIXED == "token: ''${BRACED}, price $5"' $pi
+      jq -e '.mcpServers.docs.type == "http"' $pi
+
+      home=$(mktemp -d)
+      HOME="$home" ${lib.getExe cfg.finalPackage}
+      test -L "$home/.cursor/mcp.json"
+      jq -e '.mcpServers.docs.url == "https://example.com/mcp"' "$home/.cursor/mcp.json"
+
+      home2=$(mktemp -d)
+      mkdir -p "$home2/.cursor"
+      printf '{"mcpServers":{"local":{"command":"echo"}}}' >"$home2/.cursor/mcp.json"
+      HOME="$home2" ${lib.getExe cfg.finalPackage}
+      test -L "$home2/.cursor/mcp.json"
+      jq -e '.mcpServers.local.command == "echo"' "$home2/.cursor/mcp.json.before-pi-flake"
+      touch $out
+    '';
 
   # The flake-prompt bridge: skill dirs (including extra files), prompt files
   # for commands, and one merged AGENTS.md.

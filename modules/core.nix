@@ -99,6 +99,18 @@ let
     servers = cfg.mcpServers;
   };
 
+  # Cursor's agent reads its own global mcp.json; sharing the server list keeps
+  # one declaration for both agents.
+  generatedCursorMcpFile =
+    if cfg.linkCursorMcp then
+      piLib.mkMcpConfig {
+        inherit pkgs;
+        servers = cfg.mcpServers;
+        target = "cursor";
+      }
+    else
+      null;
+
   generatedFiles = lib.filterAttrs (_: f: f != null) {
     "settings.json" = generatedSettingsFile;
     "models.json" = generatedModelsFile;
@@ -136,19 +148,27 @@ let
     else
       lib.escapeShellArg cfg.agentDirectory;
 
-  # Link one generated file into the agent directory. A regular file already
+  # Link one generated file into a config directory. A regular file already
   # sitting there was edited by the user (Pi rewrites settings.json itself), so
   # keep one copy of it before the declarative version takes over.
-  placeFile = name: ''
-    dest="$agentDir/${name}"
+  placeFile = dir: name: file: ''
+    dest="${dir}/${name}"
     if [ -e "$dest" ] && [ ! -L "$dest" ]; then
       [ -e "$dest.before-pi-flake" ] || cp -p "$dest" "$dest.before-pi-flake"
       printf 'pi-flake: %s was a local file; kept as %s.before-pi-flake\n' ${lib.escapeShellArg name} ${lib.escapeShellArg name} >&2
     fi
-    ln -sfn ${lib.escapeShellArg (toString generatedFiles.${name})} "$dest"
+    ln -sfn ${lib.escapeShellArg (toString file)} "$dest"
   '';
 
-  linkCommands = lib.concatMapStringsSep "\n" placeFile (builtins.attrNames generatedFiles);
+  linkCommands =
+    lib.concatMapStringsSep "\n" (name: placeFile "$agentDir" name generatedFiles.${name}) (
+      builtins.attrNames generatedFiles
+    )
+    + lib.optionalString (generatedCursorMcpFile != null) ''
+
+      # Same treatment for Cursor, which reads $HOME/.cursor/mcp.json.
+      mkdir -p "$HOME/.cursor"
+      ${placeFile "$HOME/.cursor" "mcp.json" generatedCursorMcpFile}'';
 
   wrapper = pkgs.writeShellScriptBin "pi" ''
     set -eu
@@ -178,7 +198,12 @@ let
     meta.mainProgram = "pi";
     passthru = {
       inherit (cfg) package settings runtimePackages;
-      inherit generatedSettingsFile generatedModelsFile generatedMcpFile;
+      inherit
+        generatedSettingsFile
+        generatedModelsFile
+        generatedMcpFile
+        generatedCursorMcpFile
+        ;
       unwrapped = cfg.package;
     };
   };
@@ -209,6 +234,18 @@ in
       description = ''
         Pi's agent directory; generated files are symlinked into it on launch.
         An externally set `PI_CODING_AGENT_DIR` wins over this option.
+      '';
+    };
+
+    linkCursorMcp = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      example = lib.literalExpression "true";
+      description = ''
+        Also symlink the generated mcp.json to `~/.cursor/mcp.json` on launch,
+        so Cursor's agent serves the same MCP servers. Pi-only keys
+        (`exposure`, `toolExposure`, `description`) and servers with
+        `enabled = false` are left out of that copy.
       '';
     };
 
@@ -420,6 +457,11 @@ in
       type = lib.types.nullOr lib.types.package;
       default = generatedMcpFile;
       description = "Generated mcp.json, or null when no servers are declared.";
+    };
+    generatedCursorMcpFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.package;
+      default = generatedCursorMcpFile;
+      description = "Generated mcp.json for Cursor, or null when linkCursorMcp is off.";
     };
   };
 

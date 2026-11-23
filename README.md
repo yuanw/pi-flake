@@ -55,7 +55,8 @@ puts `settings.json`, `models.json`, `mcp.json` and `AGENTS.md` into
 `$PI_CODING_AGENT_DIR` (default `~/.pi/agent`) as symlinks into the store, puts
 extension/skill runtime dependencies on `PATH`, exports
 `environment.variables`, and stops with a clear message if an
-`environment.required` name is missing.
+`environment.required` name is missing. With `linkCursorMcp = true` it links
+`mcp.json` to `~/.cursor/mcp.json` too, so Cursor's agent uses the same servers.
 
 That means a bare `nix run`, a NixOS system and a Home Manager user all get the
 same configuration, and Pi keeps `auth.json`, sessions and caches where it
@@ -159,6 +160,20 @@ programs.pi.mcpServers."playwright" = {
 Secrets stay out of the store by referencing the environment:
 `headers.Authorization = "Bearer \${GITHUB_TOKEN}"`.
 
+### Share them with Cursor
+
+```nix
+programs.pi.linkCursorMcp = true;   # also symlinks ~/.cursor/mcp.json
+```
+
+Cursor's agent reads the same `mcpServers` shape, so one declaration feeds both.
+Its copy drops what only Pi understands (`exposure`, `toolExposure`,
+`description`, `type = "http"`) and the servers you left `enabled = false`, and
+rewrites `$NAME` environment references as Cursor's `${env:NAME}`. A
+hand-written `~/.cursor/mcp.json` is kept as `mcp.json.before-pi-flake`.
+That file is then declarative: add servers in Nix, not in Cursor's MCP UI, whose
+save would target the read-only store path.
+
 ## Library
 
 ```nix
@@ -168,7 +183,7 @@ lib.stripPiResources { pkgs; package; }   # clear skills/prompts/themes from a m
 lib.mkPiExtensionSet { pkgs; dir; }       # one package per subdirectory
 lib.mkPiExtensionModule { name; … }       # module for one registry entry
 lib.renderPiFiles { pkgs; prompts; … }     # flake-prompt fileset -> store paths
-lib.mkMcpConfig { pkgs; servers; }        # mcp.json derivation
+lib.mkMcpConfig { pkgs; servers; target ? "pi"; }   # mcp.json derivation
 makePi { pkgs; modules; }                 # flake output: configured Pi, no host module
 ```
 
@@ -192,7 +207,7 @@ is different, and why:
 ## Development
 
 ```console
-$ nix flake check            # 8 checks: settings, mcp, skills, extensions, wrapper, placement, env, home-manager
+$ nix flake check            # 9 checks: settings, mcp, cursor, skills, extensions, wrapper, placement, env, home-manager
 $ nix flake check --all-systems --no-build
 $ nix flake check -L         # verbose, including the Home Manager integration check
 $ nix fmt

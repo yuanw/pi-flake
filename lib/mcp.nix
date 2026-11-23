@@ -4,12 +4,40 @@
   programs.pi.mcpServers -> mcp.json derivation, or null when no server is
   enabled. Stdio servers that need CLI tools get a PATH-setting wrapper: Pi
   does not expand `env.PATH`, so prefixing it there would silently break.
+
+  `target = "cursor"` writes the shape Cursor's agent reads: the same
+  `mcpServers` entries minus Pi's exposure keys, and without the servers Pi
+  keeps listed but disconnected.
 */
-{ pkgs, servers }:
+{
+  pkgs,
+  servers,
+  target ? "pi",
+}:
 let
-  enabled = lib.filterAttrs (_: server: server.enable) servers;
+  forCursor = target == "cursor";
+
+  enabled = lib.filterAttrs (_: server: server.enable && (!forCursor || server.enabled)) servers;
 
   toCommand = value: if lib.isDerivation value then lib.getExe value else toString value;
+
+  # Pi expands `$NAME` and `${NAME}` against the environment when it launches a
+  # server, which is how secrets stay out of the store. Cursor reads the same
+  # file but substitutes with `${env:NAME}`, so a shared value is rewritten.
+  substituteEnv =
+    value:
+    if !forCursor then
+      toString value
+    else
+      lib.concatStrings (
+        map (
+          chunk:
+          if builtins.isList chunk then "\${env:${builtins.head chunk}}" else chunk
+        ) (
+          # Every `$NAME` / `${NAME}` reference becomes a capture group.
+          builtins.split "\\$\\{?([A-Za-z_][A-Za-z0-9_]*)\\}?" (toString value)
+        )
+      );
 
   entry =
     name: server:
@@ -31,7 +59,6 @@ let
         inherit (server)
           type
           url
-          headers
           oauth
           timeout
           exposure
@@ -40,16 +67,29 @@ let
           ;
         command = commandValue;
         args = if server.args == [ ] then null else map toCommand server.args;
-        env = if server.env == { } then null else lib.mapAttrs (_: v: toString v) server.env;
+        env = if server.env == { } then null else lib.mapAttrs (_: v: substituteEnv v) server.env;
+        headers =
+          if server.headers == { } then null else lib.mapAttrs (_: v: substituteEnv v) server.headers;
         cwd = server.cwd;
       };
+
+      # Cursor knows none of Pi's exposure keys and has no `http` type: it
+      # picks the transport from `url` the way Pi does.
+      cursorDrop = [
+        "exposure"
+        "toolExposure"
+        "description"
+      ]
+      ++ lib.optionals (server.type == "http") [ "type" ];
+
+      shared = if forCursor then lib.removeAttrs json cursorDrop else json;
     in
     if server.enabled then
-      if server.url != null then lib.removeAttrs json [ "command" ] else json
+      if server.url != null then lib.removeAttrs shared [ "command" ] else shared
     else
       { enabled = false; };
 in
 if enabled == { } then
   null
 else
-  pkgs.writeText "pi-mcp.json" (builtins.toJSON { mcpServers = lib.mapAttrs entry enabled; })
+  pkgs.writeText "${target}-mcp.json" (builtins.toJSON { mcpServers = lib.mapAttrs entry enabled; })
