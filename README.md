@@ -168,11 +168,12 @@ programs.pi.linkCursorMcp = true;   # also symlinks ~/.cursor/mcp.json
 
 Cursor's agent reads the same `mcpServers` shape, so one declaration feeds both.
 Its copy drops what only Pi understands (`exposure`, `toolExposure`,
-`description`, `type = "http"`) and the servers you left `enabled = false`, and
-rewrites `$NAME` environment references as Cursor's `${env:NAME}`. A
-hand-written `~/.cursor/mcp.json` is kept as `mcp.json.before-pi-flake`.
-That file is then declarative: add servers in Nix, not in Cursor's MCP UI, whose
-save would target the read-only store path.
+`description`, `type` — Cursor infers the transport from `command`/`url`, and a
+type value it does not know makes it throw away the whole file) and the servers
+you left `enabled = false`, and rewrites `$NAME` environment references as
+Cursor's `${env:NAME}`. A hand-written `~/.cursor/mcp.json` is kept as
+`mcp.json.before-pi-flake`. That file is then declarative: add servers in Nix,
+not in Cursor's MCP UI, whose save would target the read-only store path.
 
 ## Library
 

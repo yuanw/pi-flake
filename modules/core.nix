@@ -243,9 +243,10 @@ in
       example = lib.literalExpression "true";
       description = ''
         Also symlink the generated mcp.json to `~/.cursor/mcp.json` on launch,
-        so Cursor's agent serves the same MCP servers. Pi-only keys
-        (`exposure`, `toolExposure`, `description`) and servers with
-        `enabled = false` are left out of that copy.
+        so Cursor's agent serves the same MCP servers. That copy leaves out
+        `exposure`, `toolExposure`, `description` and `type` (a type value Cursor
+        does not know makes it discard the whole file) and any server with
+        `enabled = false`.
       '';
     };
 

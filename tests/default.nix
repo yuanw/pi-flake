@@ -94,8 +94,9 @@ let
   '';
 
   # What core wraps for programs.pi.extensions.demo.package.
-  singleFilePackageInput = pkgs.runCommand "pi-slow-mode.ts-0-unstable-2026-09-22" { }
-    ''cp ${./fixture.ts} $out'';
+  singleFilePackageInput =
+    pkgs.runCommand "pi-slow-mode.ts-0-unstable-2026-09-22" { }
+      "cp ${./fixture.ts} $out";
 
   demoPackage = piLib.toPiPackage {
     inherit pkgs;
@@ -235,6 +236,7 @@ in
             mcpServers = {
               amap = {
                 command = "echo";
+                type = "stdio";
                 env.AMAP_KEY = "$AMAP_KEY";
                 env.MIXED = "token: \${BRACED}, price $5";
               };
@@ -258,6 +260,8 @@ in
     pkgs.runCommand "test-cursor" { nativeBuildInputs = [ pkgs.jq ]; } ''
       cursor=${cfg.generatedCursorMcpFile}
       jq -e '.mcpServers | has("off") | not' $cursor
+      # A `type` value Cursor does not know makes it drop the whole file.
+      jq -e '.mcpServers.amap | has("type") | not' $cursor
       jq -e '.mcpServers.amap.env.AMAP_KEY == "''${env:AMAP_KEY}"' $cursor
       jq -e '.mcpServers.amap.env.MIXED == "token: ''${env:BRACED}, price $5"' $cursor
       jq -e '.mcpServers.docs.url == "https://example.com/mcp"' $cursor
@@ -267,6 +271,7 @@ in
       pi=${cfg.generatedMcpFile}
       jq -e '.mcpServers.off == { "enabled": false }' $pi
       jq -e '.mcpServers.amap.env.AMAP_KEY == "$AMAP_KEY"' $pi
+      jq -e '.mcpServers.amap.type == "stdio"' $pi
       jq -e '.mcpServers.amap.env.MIXED == "token: ''${BRACED}, price $5"' $pi
       jq -e '.mcpServers.docs.type == "http"' $pi
 

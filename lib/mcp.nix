@@ -30,10 +30,7 @@ let
       toString value
     else
       lib.concatStrings (
-        map (
-          chunk:
-          if builtins.isList chunk then "\${env:${builtins.head chunk}}" else chunk
-        ) (
+        map (chunk: if builtins.isList chunk then "\${env:${builtins.head chunk}}" else chunk) (
           # Every `$NAME` / `${NAME}` reference becomes a capture group.
           builtins.split "\\$\\{?([A-Za-z_][A-Za-z0-9_]*)\\}?" (toString value)
         )
@@ -73,14 +70,15 @@ let
         cwd = server.cwd;
       };
 
-      # Cursor knows none of Pi's exposure keys and has no `http` type: it
-      # picks the transport from `url` the way Pi does.
+      # Cursor knows none of Pi's exposure keys. `type` never travels either:
+      # Cursor infers the transport from `command`/`url`, and a value it does
+      # not know (e.g. `streamable-http`) makes it discard the whole file.
       cursorDrop = [
         "exposure"
         "toolExposure"
         "description"
-      ]
-      ++ lib.optionals (server.type == "http") [ "type" ];
+        "type"
+      ];
 
       shared = if forCursor then lib.removeAttrs json cursorDrop else json;
     in
